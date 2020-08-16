@@ -1,6 +1,9 @@
 package pagecomp
 
-import "reflect"
+import (
+	"net/http"
+	"reflect"
+)
 
 // Page represent a page to compare
 type Page struct {
@@ -17,4 +20,20 @@ func (p Page) Equal(another Page) bool {
 		return false
 	}
 	return true
+}
+
+// NewPage create page from `*http.request`
+func NewPage(r *http.Request) Page {
+	path := r.URL.Path
+	params := make(map[string]string)
+	r.ParseForm()
+
+	for k, v := range r.Form {
+		params[k] = v[0]
+	}
+
+	return Page{
+		path:   path,
+		params: params,
+	}
 }
