@@ -2,13 +2,14 @@ package pagecomp
 
 import (
 	"fmt"
+	"regexp"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 )
 
-func TestComperatorEqual(t *testing.T) {
+func TestComperatorEqualWithNoRule(t *testing.T) {
 	cases := []struct {
 		name string
 		p1   Page
@@ -28,6 +29,62 @@ func TestComperatorEqual(t *testing.T) {
 			assert.Equal(t, tc.want, got)
 		})
 	}
+}
+
+func TestComparatorEqualWithPathRule(t *testing.T) {
+	c := NewComparator()
+	err := c.AddPathRule("/a/b/:param1")
+	assert.NoError(t, err)
+	err = c.AddPathRule("/a/b/:param1/c/:param2")
+	assert.NoError(t, err)
+
+	cases := []struct {
+		name string
+		p1   Page
+		p2   Page
+		want bool
+	}{
+		{name: "path同じ,param同じ", p1: Page{path: "/a/b/param", params: pageParams("x", "y")}, p2: Page{path: "/a/b/param", params: pageParams("x", "y")}, want: true},
+		{name: "path同じ,param不一致", p1: Page{path: "/a/b/param", params: pageRandomParams("x")}, p2: Page{path: "/a/b/param", params: pageRandomParams("x")}, want: true},
+		{name: "pathパラメータが不一致", p1: Page{path: "/a/b/param1", params: nil}, p2: Page{path: "/a/b/param2", params: nil}, want: true},
+		{name: "pathが不一致1", p1: Page{path: "/a/b/param1", params: nil}, p2: Page{path: "/a/b/param1/c/param2", params: nil}, want: false},
+		{name: "pathが不一致2", p1: Page{path: "/a", params: nil}, p2: Page{path: "/b", params: nil}, want: false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := c.Equal(tc.p1, tc.p2)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestComparatorEqualWithParamRule(t *testing.T) {
+	c := NewComparator()
+	c.AddParamRule("page_id")
+
+	cases := []struct {
+		name string
+		p1   Page
+		p2   Page
+		want bool
+	}{
+		{name: "path同じ,param同じ", p1: Page{path: "/a", params: pageParams("page_id")}, p2: Page{path: "/a", params: pageParams("page_id")}, want: true},
+		{name: "path同じ,param不一致", p1: Page{path: "/a", params: pageRandomParams("page_id")}, p2: Page{path: "/a", params: pageRandomParams("page_id")}, want: false},
+		{name: "paramなし", p1: Page{path: "/a", params: nil}, p2: Page{path: "/a", params: nil}, want: true},
+		{name: "pathが不一致,paramが同じ", p1: Page{path: "/a", params: pageParams("page_id")}, p2: Page{path: "/b", params: pageParams("page_id")}, want: false},
+		{name: "pathが不一致,paramが不一致", p1: Page{path: "/a", params: pageRandomParams("page_id")}, p2: Page{path: "/b", params: pageRandomParams("page_id")}, want: false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := c.Equal(tc.p1, tc.p2)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+func TestComparatorEqualWithNoRule(t *testing.T) {
+
 }
 
 func TestEqualParams(t *testing.T) {
@@ -69,35 +126,13 @@ func pageRandomParams(keys ...string) map[string]string {
 	return params
 }
 
-func TestMutch(t *testing.T) {
-	rule, err := newRule("/a/b/c/:id/d/:bbb/a", "x", "y")
-	assert.NoError(t, err)
-
-	cases := []struct {
-		name string
-		page Page
-		want bool
-	}{
-		{name: "Should match", page: Page{path: "/a/b/c/id/d/bbb/a", params: pageParams("x", "y")}, want: true},
-		{name: "not path match", page: Page{path: "/a/b/c/id/d/a", params: pageParams("x", "y")}, want: false},
-		{name: "not param match", page: Page{path: "/a/b/c/id/d/bbb/a", params: pageParams("x")}, want: false},
-		{name: "path match", page: Page{path: "/a/b/c/xxxxxxxxx/d/bbbbbbbbbbbb/a", params: pageParams("x", "y")}, want: true},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got := rule.Match(tc.page)
-			assert.Equal(t, tc.want, got)
-		})
-	}
-}
-
 func ExampleEqual() {
 	c := NewComparator()
-	err := c.AddRule("/a/:id", "x")
+	err := c.AddPathRule("/a/:id")
 	if err != nil {
 		panic(err)
 	}
+	c.AddParamRule("x")
 
 	p1 := Page{path: "/a/abc", params: map[string]string{"x": "example"}}
 	p2 := Page{path: "/a/1234567", params: map[string]string{"x": "example"}}
@@ -106,4 +141,10 @@ func ExampleEqual() {
 
 	// Output:
 	// true
+}
+
+func TestRegex(t *testing.T) {
+	regex := regexp.MustCompile(`/a/b/[^/]+`)
+	t.Log(regex.MatchString("/a/b/test"))
+	t.Log(regex.MatchString("/a/b/test/c/d"))
 }

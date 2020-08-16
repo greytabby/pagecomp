@@ -12,73 +12,78 @@ type PageComparator interface {
 
 // Comparator reqpresents page comperator
 type Comparator struct {
-	rules []*compareRule
-}
-
-type compareRule struct {
-	pathRule  *regexp.Regexp
-	paramRule []string
+	pathRules  []*regexp.Regexp
+	paramRules []string
 }
 
 // NewComparator return comprator
 func NewComparator() *Comparator {
 	return &Comparator{
-		rules: make([]*compareRule, 0),
+		pathRules:  make([]*regexp.Regexp, 0),
+		paramRules: make([]string, 0),
 	}
 }
 
 // Equal return whether page a and b is diffrence under the compare rule
 func (c *Comparator) Equal(a, b Page) bool {
 	// ルールがない場合そのままPageを比べる
-	if len(c.rules) == 0 {
+	if len(c.pathRules) == 0 && len(c.paramRules) == 0 {
 		return a.Equal(b)
 	}
 
-	for _, rule := range c.rules {
-		if rule.Match(a) && rule.Match(b) {
-			if equalParams(rule.Params(), a.params, b.params) {
-				return true
-			}
+	if equalPath(a, b) {
+		return equalParams(c.paramRules, a.params, b.params)
+	}
+
+	// pathが異なっているかどうか
+	matchPath := false
+	for _, regex := range c.pathRules {
+		if regex.MatchString(a.path) && regex.MatchString(b.path) {
+			matchPath = true
+			break
 		}
 	}
-	return false
+
+	// paramが異なっているかどうか
+	matchParam := equalParams(c.paramRules, a.params, b.params)
+
+	return matchPath && matchParam
 }
 
-// AddRule add rule to comparetor
-func (c *Comparator) AddRule(pattern string, params ...string) error {
-	rule, err := newRule(pattern, params...)
+// AddPathRule add path paramater rule to comparator
+func (c *Comparator) AddPathRule(pattern string) error {
+	regex, err := pathPatternToRegex(pattern)
 	if err != nil {
 		return err
 	}
-	c.rules = append(c.rules, rule)
+	c.pathRules = append(c.pathRules, regex)
 	return nil
 }
 
-func newRule(pattern string, params ...string) (*compareRule, error) {
+// AddPathRule add query, post, put, delete paramater rule to comparator
+func (c *Comparator) AddParamRule(paramKey string) {
+	c.paramRules = append(c.paramRules, paramKey)
+}
+
+func pathPatternToRegex(pattern string) (*regexp.Regexp, error) {
 	parts := strings.Split(pattern, "/")
 
 	for i, part := range parts {
 		if strings.HasPrefix(part, ":") {
-			expr := "([^/]+)"
+			expr := "[^/]+"
 			parts[i] = expr
 		}
 	}
 
-	pattern = strings.Join(parts, "/")
-	regex, err := regexp.Compile(pattern)
-	if err != nil {
-		return nil, err
-	}
-
-	rule := &compareRule{
-		pathRule:  regex,
-		paramRule: params,
-	}
-	return rule, nil
+	pattern = "^" + strings.Join(parts, "/") + "$"
+	return regexp.Compile(pattern)
 }
 
 // ruleにあるparamが2つのpageで一致しているかどうかを返す
 func equalParams(ruleParams []string, a, b map[string]string) bool {
+	if !hasRuleKey(ruleParams, a, b) {
+		return true
+	}
 	for _, param := range ruleParams {
 		if _, ok := a[param]; !ok {
 			return false
@@ -94,21 +99,18 @@ func equalParams(ruleParams []string, a, b map[string]string) bool {
 	return true
 }
 
-// pageがruleに合致しているかどうかを返す
-func (r *compareRule) Match(p Page) bool {
-	for _, param := range r.paramRule {
-		if _, ok := p.params[param]; !ok {
-			return false
+func hasRuleKey(ruleParams []string, a, b map[string]string) bool {
+	for _, param := range ruleParams {
+		if _, ok := a[param]; ok {
+			return true
+		}
+		if _, ok := b[param]; ok {
+			return true
 		}
 	}
-
-	if !r.pathRule.Match(([]byte(p.path))) {
-		return false
-	}
-
-	return true
+	return false
 }
 
-func (r *compareRule) Params() []string {
-	return r.paramRule
+func equalPath(a, b Page) bool {
+	return a.path == b.path
 }
